@@ -15,13 +15,12 @@ if grep -q '^root::' /etc/shadow 2>/dev/null; then
 	sed -i 's|^root::|root:\$1\$TwrtSalt\$yQfUbPXNwm5I6uVSSQMf./:|' /etc/shadow
 fi
 
-# 3. 加固 SSH (Dropbear)：仅监听 LAN 接口，禁止暴露到 WAN
+# 3. 加固 SSH (Dropbear)：由 fw4 拦截 WAN 入站，保持 Interface 为空避免 procd 触发器导致 dropbear 无法启动
 uci -q set dropbear.main.enable='1'
-uci -q set dropbear.main.Interface='lan'
+uci -q delete dropbear.main.Interface 2>/dev/null || true
 uci -q set dropbear.main.PasswordAuth='on'
 uci -q set dropbear.main.RootPasswordAuth='on'
 uci -q set dropbear.main.Port='22'
-uci -q set dropbear.main._direct='1'
 
 # 4. 加固网页终端 ttyd：仅绑定 @lan 内网接口，禁止 0.0.0.0 全网裸奔
 if [ -f /etc/config/ttyd ]; then
