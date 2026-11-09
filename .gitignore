@@ -1,0 +1,4 @@
+openwrt/
+*.bak
+.DS_Store
+kwrt-backup-*.tar.gz

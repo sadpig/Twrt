@@ -1,0 +1,69 @@
+#!/bin/sh
+#====================================================================
+# Twrt 首次启动自定义与安全加固脚本 (99-twrt-security)
+# 在 my-default-settings (99-default-settings) 之后执行，完成品牌覆盖与安全收口
+#====================================================================
+
+# 1. 品牌与主机名统一为 Twrt
+uci -q set system.@system[0].hostname='Twrt'
+uci -q set system.@system[0].zonename='Asia/Shanghai'
+uci -q set system.@system[0].timezone='CST-8'
+uci -q set system.@system[0].links='0'
+
+# 2. 修复 root 空密码漏洞：如果 /etc/shadow 中 root 为空密码，写入加密哈希（默认密码: root）
+if grep -q '^root::' /etc/shadow 2>/dev/null; then
+	sed -i 's|^root::|root:\$1\$TwrtSalt\$yQfUbPXNwm5I6uVSSQMf./:|' /etc/shadow
+fi
+
+# 3. 加固 SSH (Dropbear)：仅监听 LAN 接口，禁止暴露到 WAN
+uci -q set dropbear.main.enable='1'
+uci -q set dropbear.main.Interface='lan'
+uci -q set dropbear.main.PasswordAuth='on'
+uci -q set dropbear.main.RootPasswordAuth='on'
+uci -q set dropbear.main.Port='22'
+uci -q set dropbear.main._direct='1'
+
+# 4. 加固网页终端 ttyd：仅绑定 @lan 内网接口，禁止 0.0.0.0 全网裸奔
+if [ -f /etc/config/ttyd ]; then
+	uci -q set ttyd.@ttyd[0].interface='@lan'
+	uci -q set ttyd.@ttyd[0].command='/bin/login'
+fi
+
+# 5. 加固 Nginx：80 端口补充 restrict_locally 内网限制，主机名设为 twrt
+if [ -f /etc/config/nginx ]; then
+	uci -q set nginx.default_server.server_name='twrt'
+	uci -q del_list nginx.default_server.include='restrict_locally'
+	uci -q add_list nginx.default_server.include='restrict_locally'
+fi
+
+# 6. 开启 Dnsmasq DNS 重绑定攻击防护 (Rebind Protection)
+if [ -f /etc/config/dhcp ]; then
+	uci -q set dhcp.@dnsmasq[0].rebind_protection='1'
+	uci -q set dhcp.@dnsmasq[0].rebind_localhost='1'
+	uci -q set dhcp.@dnsmasq[0].localservice='1'
+fi
+
+# 7. 默认关闭 UPnP 自动打洞（可在 LuCI 界面按需手动开启），开启 ACL 校验
+if [ -f /etc/config/upnpd ]; then
+	uci -q set upnpd.config.enabled='0' 2>/dev/null || true
+	uci -q set upnpd.settings.enabled='0' 2>/dev/null || true
+	uci -q set upnpd.settings.check_acl='1' 2>/dev/null || true
+fi
+
+# 8. 清理可能存在的 FastNet WAN 端口暴露规则
+uci -q delete firewall.fastnet 2>/dev/null || true
+
+# 9. 默认启用 Vantage 主题
+if [ -d /usr/share/ucode/luci/template/themes/vantage ]; then
+	uci -q set luci.main.mediaurlbase='/luci-static/vantage'
+fi
+
+# 10. 锁定系统关键包，防止 opkg 异常覆盖
+if [ -f /etc/config/opkg ]; then
+	uci -q del_list opkg.ignore.ipkg='linkease-app-entry' 2>/dev/null || true
+	uci -q add_list opkg.ignore.ipkg='linkease-app-entry'
+fi
+
+uci -q commit
+rm -rf /tmp/luci-*
+exit 0

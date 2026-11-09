@@ -1,0 +1,22 @@
+#!/bin/bash
+#=================================================
+# Twrt x86_64 (R86S) 架构专属定制脚本
+#=================================================
+
+SHELL_FOLDER=$(dirname $(readlink -f "$0"))
+
+# 启用 -O2 编译优化提升 x86_64 转发与加解密吞吐性能
+sed -i 's/Os/O2/g' include/target.mk
+
+# 同步 x86 6.12 内核扩展补丁与网卡识别脚本
+git_clone_path master https://github.com/coolsnowwolf/lede target/linux/x86/files target/linux/x86/patches-6.12
+
+wget -N https://raw.githubusercontent.com/coolsnowwolf/lede/master/target/linux/x86/base-files/etc/board.d/02_network -P target/linux/x86/base-files/etc/board.d/
+wget -N https://github.com/coolsnowwolf/lede/raw/refs/heads/master/target/linux/x86/Makefile -P target/linux/x86/
+sed -i -e "s/ autocore-x86//" \
+	   -e "s/ usb-net-rtl8152-vendor/usb-net-rtl8152/" \
+	   -e "s/ automount//" \
+	   -e "s/6.18/6.12/" target/linux/x86/Makefile
+
+sed -i 's/kmod-r8169/kmod-r8168/' target/linux/x86/image/64.mk
+sed -i 's/256/1024/g' target/linux/x86/image/Makefile

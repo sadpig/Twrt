@@ -1,0 +1,44 @@
+#!/bin/sh
+#====================================================================
+# twrt-upgrade: 从 GitHub (sadpig/Twrt) 自动拉取最新 Release 固件并升级
+# 用法:
+#   twrt-upgrade --check   # 仅检查是否有新版本
+#   twrt-upgrade           # 下载最新 UEFI 固件并保留配置升级
+#====================================================================
+set -e
+
+REPO="sadpig/Twrt"
+API_URL="https://api.github.com/repos/${REPO}/releases/latest"
+TMP_IMG="/tmp/twrt-latest-efi.img.gz"
+
+echo "==> 正在检查 ${REPO} 最新版本..."
+REL_JSON="$(curl -fsSL "$API_URL" 2>/dev/null || wget -qO- "$API_URL" 2>/dev/null || true)"
+if [ -z "$REL_JSON" ]; then
+	echo "错误: 无法连接到 GitHub API (${API_URL})，请检查网络连接。" >&2
+	exit 1
+fi
+
+TAG_NAME="$(printf '%s\n' "$REL_JSON" | jsonfilter -e '@.tag_name' 2>/dev/null || true)"
+DL_URL="$(printf '%s\n' "$REL_JSON" | jsonfilter -e '@.assets[*].browser_download_url' 2>/dev/null | grep 'combined-efi\.img\.gz$' | head -n 1 || true)"
+CUR_REV="$(grep '^DISTRIB_REVISION=' /etc/openwrt_release 2>/dev/null | cut -d"'" -f2 || echo 'unknown')"
+
+echo "    当前系统版本: ${CUR_REV}"
+echo "    云端最新版本: ${TAG_NAME:-未知}"
+
+if [ "${1:-}" = "--check" ]; then
+	exit 0
+fi
+
+if [ -z "$DL_URL" ]; then
+	echo "错误: 未在最新 Release 中找到 *-combined-efi.img.gz 固件资产。" >&2
+	exit 1
+fi
+
+echo "==> 正在下载固件: ${DL_URL} ..."
+curl -fL "$DL_URL" -o "$TMP_IMG" || wget -O "$TMP_IMG" "$DL_URL"
+
+echo "==> 正在校验固件完整性 (sysupgrade --test)..."
+sysupgrade --test "$TMP_IMG"
+
+echo "==> 校验通过，开始执行保留配置升级..."
+sysupgrade -v "$TMP_IMG"
