@@ -83,8 +83,20 @@ jobs:
         uses: stupidloud/cachewrtbuild@main
         with:
           ccache: 'false'
-          mixkey: ${{ env.TARGET }}
+          mixkey: ${{ env.TARGET }}-v2
           prefix: ${{ github.workspace }}/openwrt
+
+      - name: Verify Target Config After Cache Restore
+        run: |
+          cd openwrt
+          if ! grep -q "^CONFIG_TARGET_x86_64=y" .config; then
+            echo "==> 重新对齐 .config 目标架构为 ${{ env.TARGET }}..."
+            cat "devices/${{ env.TARGET }}/.config" > .config
+            echo >> .config
+            cat "devices/common/.config" >> .config
+            make defconfig
+          fi
+          grep -E "^CONFIG_TARGET_(x86|mediatek|armsr)" .config || true
 
       - name: Compile Twrt Firmware
         run: |

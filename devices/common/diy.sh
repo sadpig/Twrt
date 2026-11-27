@@ -14,7 +14,7 @@ sed -i "s?git.openwrt.org/\(project\|feed\)?github.com/openwrt?g" feeds.conf.def
 ./scripts/feeds update -a
 
 # 移除存在严重安全隐患、重复版本死循环或捆绑推广的冗余包
-rm -rf feeds/kiddin9/{fastnet,luci-app-fastnet,app-meta-fastnet,linkease-app-entry,luci-app-kulicloud,luci-app-gpsysupgrade,luci-app-istorex,luci-app-store,quickstart,luci-app-quickstart}
+rm -rf feeds/kiddin9/{fastnet,luci-app-fastnet,app-meta-fastnet,linkease-app-entry,luci-app-kulicloud,luci-app-kuli-helper,luci-app-gpsysupgrade,luci-app-istorex,luci-app-store,quickstart,luci-app-quickstart}
 
 ./scripts/feeds install -a -p kiddin9 -f
 ./scripts/feeds install -a
@@ -47,12 +47,15 @@ git_clone_path openwrt-25.12 https://github.com/immortalwrt/immortalwrt package/
 echo "$(date +"%s")" >version.date
 sed -i '/$(curdir)\/compile:/c\$(curdir)/compile: package/opkg/host/compile' package/Makefile
 sed -i "s/DEFAULT_PACKAGES:=/DEFAULT_PACKAGES:=luci-app-advancedplus luci-app-sysctl luci-app-firewall luci-app-package-manager luci-app-upnp luci-app-syscontrol \
-luci-app-wizard luci-base luci-compat luci-lib-ipkg luci-lib-fs \
+luci-app-wizard luci-base luci-compat luci-lib-ipkg luci-lib-fs luci-app-crontab-wizard \
 coremark wget-ssl curl autocore htop nano zram-swap kmod-lib-zstd kmod-tcp-bbr bash openssh-sftp-server block-mount resolveip ds-lite swconfig luci-app-fan luci-app-footstrap-files luci-app-wifihistory /" include/target.mk
 
 sed -i "s/^.*vermagic$/\techo '1' > \$(LINUX_DIR)\/.vermagic/" include/kernel-defaults.mk
 
-wget -N https://raw.githubusercontent.com/openwrt/packages/master/lang/golang/golang/Makefile -P feeds/packages/lang/golang/golang/
+# 同步最新 Golang 工具链 (Go 1.27+)，满足最新 Xray-core / Sing-box 编译要求
+rm -rf feeds/packages/lang/golang
+git clone --depth 1 https://github.com/sbwml/packages_lang_golang feeds/packages/lang/golang || \
+	git_clone_path master https://github.com/openwrt/packages mv feeds/packages/lang/golang
 
 git_clone_path master https://github.com/coolsnowwolf/lede mv target/linux/generic/hack-6.12
 wget -N https://raw.githubusercontent.com/coolsnowwolf/lede/master/target/linux/generic/pending-6.12/613-netfilter_optional_tcp_window_check.patch -P target/linux/generic/pending-6.12/

@@ -78,12 +78,6 @@ cmd_prepare() {
 	chmod +x "devices/common/${DIY_SH}"
 	/bin/bash "devices/common/${DIY_SH}"
 
-	cp -f "devices/common/${CONFIG_FILE}" .config
-	if [ -f "devices/${TARGET}/${CONFIG_FILE}" ]; then
-		echo >> .config
-		cat "devices/${TARGET}/${CONFIG_FILE}" >> .config
-	fi
-
 	if [ -f "devices/${TARGET}/${DIY_SH}" ]; then
 		chmod +x "devices/${TARGET}/${DIY_SH}"
 		/bin/bash "devices/${TARGET}/${DIY_SH}"
@@ -95,7 +89,16 @@ cmd_prepare() {
 	find "devices/${TARGET}/patches" -maxdepth 1 -type f -name '*.revert.patch' -print0 2>/dev/null | sort -z | xargs -I % -t -0 -n 1 sh -c "patch -d './' -R --no-backup-if-mismatch -p1 -F 1 -i '%'" || true
 	find "devices/${TARGET}/patches" -maxdepth 1 -type f -name '*.patch' ! -name '*.revert.patch' ! -name '*.bin.patch' -print0 2>/dev/null | sort -z | xargs -I % -t -0 -n 1 sh -c "patch -d './' --no-backup-if-mismatch -p1 -F 1 -i '%'" || true
 
+	# 在所有 feeds 和 target Makefile 准备完毕后再写入 .config（且将 TARGET 架构配置放在最前，确保 Kconfig 锁定目标架构）
+	rm -f .config .config.old
+	if [ -f "devices/${TARGET}/${CONFIG_FILE}" ]; then
+		cat "devices/${TARGET}/${CONFIG_FILE}" > .config
+		echo >> .config
+	fi
+	cat "devices/common/${CONFIG_FILE}" >> .config
+
 	make defconfig
+	grep -E "^CONFIG_TARGET_(x86|mediatek|armsr)" .config || true
 	echo "==> Twrt (${TARGET}) 配置准备完成！配置文件位于: ${OPENWRT_DIR}/.config"
 }
 
@@ -113,27 +116,44 @@ cmd_apply_live() {
 	local router_ip="${1:-10.0.0.1}"
 	local router_pass="${ROUTER_PASS:-root}"
 	echo "==> 正在将 Twrt 品牌与安全加固配置直接同步到在线路由器 root@${router_ip} ..."
-	sshpass -p "${router_pass}" scp -o StrictHostKeyChecking=accept-new \
+	SSHPASS="${router_pass}" sshpass -e scp -o PubkeyAuthentication=no -o StrictHostKeyChecking=accept-new \
 		"${ROOT_DIR}/devices/common/diy/package/base-files/files/etc/banner" \
 		"root@${router_ip}:/etc/banner"
-	sshpass -p "${router_pass}" scp -o StrictHostKeyChecking=accept-new \
+	SSHPASS="${router_pass}" sshpass -e scp -o PubkeyAuthentication=no -o StrictHostKeyChecking=accept-new \
 		"${ROOT_DIR}/devices/common/diy/package/base-files/files/usr/sbin/twrt-upgrade" \
 		"root@${router_ip}:/usr/sbin/twrt-upgrade"
-	sshpass -p "${router_pass}" scp -o StrictHostKeyChecking=accept-new \
+	SSHPASS="${router_pass}" sshpass -e scp -o PubkeyAuthentication=no -o StrictHostKeyChecking=accept-new \
 		"${ROOT_DIR}/devices/common/diy/package/base-files/files/etc/uci-defaults/99-twrt-security" \
 		"root@${router_ip}:/tmp/99-twrt-security"
-	sshpass -p "${router_pass}" ssh -o StrictHostKeyChecking=accept-new "root@${router_ip}" '
+	SSHPASS="${router_pass}" sshpass -e ssh -o PubkeyAuthentication=no -o StrictHostKeyChecking=accept-new "root@${router_ip}" '
 		chmod +x /usr/sbin/twrt-upgrade
 		sh /tmp/99-twrt-security
 		rm -f /tmp/99-twrt-security
 		sed -i "s/Kwrt/Twrt/g; s/kwrt/twrt/g; s/Kiddin\x27/Twrt/g" /etc/openwrt_release /etc/os-release /usr/lib/os-release /etc/device_info /etc/banner 2>/dev/null || true
 		sed -i "s/menuentry \"Kwrt/menuentry \"Twrt/g" /boot/grub/grub.cfg 2>/dev/null || true
 		sed -i "/openwrt\.ai/d; /kiddin9\/Kwrt/d; /t\.me\/opkwrt/d" /www/luci-static/resources/view/status/include/10_system.js 2>/dev/null || true
+
+		# 停止并彻底卸载在线路由器上残留的冗余/风险软件包
+		for svc in haproxy fastnet kuli-helper kulicloud linkease-app-entry quickstart startdhns upnpd miniupnpd; do
+			/etc/init.d/$svc stop 2>/dev/null || true
+			/etc/init.d/$svc disable 2>/dev/null || true
+		done
+		opkg remove --force-depends \
+			app-meta-fastnet luci-i18n-fastnet-zh-cn luci-app-fastnet fastnet \
+			linkease-app-entry luci-lib-linkeaseauth \
+			luci-app-kuli-helper luci-app-kulicloud \
+			luci-app-quickstart quickstart luci-app-istorex luci-app-store \
+			haproxy luci-app-gpsysupgrade 2>/dev/null || true
+		rm -rf /etc/config/fastnet /etc/config/kulicloud /etc/config/linkease_app_entry /etc/config/*-opkg /etc/nginx/*-opkg /etc/mihomo /tmp/mihomo 2>/dev/null || true
+
+		/etc/init.d/sysctl restart 2>/dev/null || true
 		/etc/init.d/system reload 2>/dev/null || true
+		/etc/init.d/cron restart 2>/dev/null || true
 		/etc/init.d/dropbear reload 2>/dev/null || true
 		/etc/init.d/nginx reload 2>/dev/null || true
 		/etc/init.d/dnsmasq reload 2>/dev/null || true
 		/etc/init.d/firewall reload 2>/dev/null || true
+		rm -rf /tmp/luci-*
 	'
 	echo "==> 在线路由器 ${router_ip} 已成功升级为 Twrt 并完成安全加固！"
 }

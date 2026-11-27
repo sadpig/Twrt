@@ -37,6 +37,8 @@
 
 | 问题项 | 原版 Kwrt 状态 | Twrt 修复方案 |
 | :--- | :--- | :--- |
+| **BBR 拥塞控制被重置** | `firewall` 服务启动/重载时因未设置 `firewall.@defaults[0].tcpcca` 强制将 `bbr` 重置回 `cubic` | 显式写入 `firewall.@defaults[0].tcpcca='bbr'` 并注入 `/etc/sysctl.d/98-twrt-r86s.conf`（32MB 缓冲区 + TFO=3 + Conntrack 加速回收） |
+| **凌晨定时升级复活推广包** | `/etc/crontabs/root` 每天 04:49 执行 `51-opkg-upgrade`，自动将 `fastnet` / `kuli-helper` 等重新拉起 | 默认禁用 `autoupgrade_pkg`、移除定时静默升级任务，并从 `opkg.auto` 清理推广包 |
 | **`root` 空密码漏洞** | `passwd` 脚本失效导致 `/etc/shadow` 为空密码，任意人免密直通 | `99-twrt-security` 直接写入加密密码哈希（默认密码 `root`），杜绝空密码裸奔 |
 | **FastNet 外网暴露** | 默认安装 `fastnet` 且无 Token 认证，防火墙在 WAN 口放行 TCP `3200` | 从编译源彻底剔除 `fastnet` 与 `linkease-app-entry`，并清除防火墙 `3200` 端口规则 |
 | **`linkease-app-entry` 死循环** | 软件源重复打包 + 前端未过滤 `hold` 标志，更新列表永远提示升级 | 移除该冗余包，并修补 `package-manager.js` 使其严格识别 `inst.hold` 锁定标记 |
