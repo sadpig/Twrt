@@ -81,10 +81,11 @@ sed -i "s/Kwrt/Twrt/g; s/kwrt\.lan/twrt.lan/g" package/feeds/kiddin9/luci-app-wi
 # 移除状态页底部的 Kwrt 推广外链 (固件下载/赞助/TG群)
 find feeds/ package/ -name "10_system.js" -exec sed -i '/openwrt\.ai/d; /kiddin9\/Kwrt/d; /t\.me\/opkwrt/d' {} + 2>/dev/null || true
 
-# 6. 修复 luci-app-package-manager 忽略 hold 锁定包状态的 Bug
+# 6. 修复 luci-app-package-manager 忽略 hold 锁定包状态以及多源同名包只取第一个旧版的 Bug
 find feeds/ package/ -name "package-manager.js" -exec sed -i \
-	-e "s/if (!isPkgInstalled(inst) || pkg\.name\.includes('busybox')/if (!isPkgInstalled(inst) || inst.hold || pkg.name.includes('busybox')/" \
+	-e "s/if (!isPkgInstalled(inst) || pkg\.name\.includes('busybox')/if (!isPkgInstalled(inst) || inst.hold || pkg.name.includes('busybox') || pkg.name.includes('my-default-settings')/" \
 	-e "s/else if (isPkgInstalled(inst) && compareVersion(pkg\.version, inst\.version) > 0)/else if (isPkgInstalled(inst) \&\& !inst.hold \&\& compareVersion(pkg.version, inst.version) > 0)/" \
+	-e "s/dest\.pkgs\[pkg\.name\] = dest\.pkgs\[pkg\.name\] ? dest\.pkgs\[pkg\.name\] : pkg;/dest.pkgs[pkg.name] = (dest.pkgs[pkg.name] \&\& compareVersion(dest.pkgs[pkg.name].version, pkg.version) >= 0) ? dest.pkgs[pkg.name] : pkg;/" \
 	{} + 2>/dev/null || true
 
 # 7. 默认 Wi-Fi 国家码设为 CN 并默认启用

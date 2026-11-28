@@ -159,6 +159,15 @@ EOF
 modprobe tcp_bbr 2>/dev/null || true
 sysctl -e -p /etc/sysctl.d/98-twrt-r86s.conf >/dev/null 2>&1 || true
 
+# 16. 修补 package-manager.js：过滤 hold 锁定包及 my-default-settings，并在多源同名包时取最高版本
+if [ -f /www/luci-static/resources/view/package-manager.js ]; then
+	sed -i \
+		-e "s/if (!isPkgInstalled(inst) || pkg\.name\.includes('busybox')/if (!isPkgInstalled(inst) || inst.hold || pkg.name.includes('busybox') || pkg.name.includes('my-default-settings')/" \
+		-e "s/else if (isPkgInstalled(inst) && compareVersion(pkg\.version, inst\.version) > 0)/else if (isPkgInstalled(inst) \&\& !inst.hold \&\& compareVersion(pkg.version, inst.version) > 0)/" \
+		-e "s/dest\.pkgs\[pkg\.name\] = dest\.pkgs\[pkg\.name\] ? dest\.pkgs\[pkg\.name\] : pkg;/dest.pkgs[pkg.name] = (dest.pkgs[pkg.name] \&\& compareVersion(dest.pkgs[pkg.name].version, pkg.version) >= 0) ? dest.pkgs[pkg.name] : pkg;/" \
+		/www/luci-static/resources/view/package-manager.js 2>/dev/null || true
+fi
+
 uci -q commit
 rm -rf /tmp/luci-*
 exit 0
