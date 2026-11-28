@@ -77,14 +77,40 @@ fi
 
 # 12. 清理 opkg.auto 中残留的冗余推广包并锁定 ignore 列表
 if [ -f /etc/config/opkg ]; then
-	for pkg in app-meta-fastnet fastnet luci-app-fastnet luci-i18n-fastnet-zh-cn linkease-app-entry luci-lib-linkeaseauth luci-app-kulicloud luci-app-kuli-helper haproxy quickstart luci-app-quickstart luci-app-istorex luci-app-store; do
+	for pkg in base-files my-default-settings app-meta-fastnet fastnet luci-app-fastnet luci-i18n-fastnet-zh-cn linkease-app-entry luci-lib-linkeaseauth luci-app-kulicloud luci-app-kuli-helper haproxy quickstart luci-app-quickstart luci-app-istorex luci-app-store aria2-openssl ruby libruby3.4 ruby-bigdecimal ruby-date ruby-digest ruby-enc ruby-io-nonblock ruby-io-wait ruby-ipaddr ruby-openssl ruby-pstore ruby-psych ruby-socket ruby-stringio ruby-yaml; do
 		uci -q del_list opkg.auto.ipkg="$pkg" 2>/dev/null || true
 		uci -q del_list opkg.ignore.ipkg="$pkg" 2>/dev/null || true
 		uci -q add_list opkg.ignore.ipkg="$pkg"
 	done
 fi
+opkg flag hold base-files my-default-settings 2>/dev/null || true
 
-# 13. R86S (10G SFP+ / 2.5GbE + 8GB RAM) 内核网络栈与 BBR 性能调优
+# 13. R86S 网卡硬件卸载与 RX/TX Ring Buffer 环形队列扩容 (igc / igb / mlx4_core 10G SFP+)
+for dev in $(ls /sys/class/net/ 2>/dev/null | grep -E '^eth[0-9]+$'); do
+	if command -v ethtool >/dev/null 2>&1; then
+		drv="$(ethtool -i "$dev" 2>/dev/null | awk '/^driver:/ {print $2}')"
+		case "$drv" in
+			igc|igb)
+				ethtool -G "$dev" rx 4096 tx 4096 2>/dev/null || true
+				;;
+			mlx4_en|mlx4_core|mlx5_core|ixgbe)
+				ethtool -G "$dev" rx 4096 tx 4096 2>/dev/null || true
+				;;
+		esac
+	fi
+done
+
+if [ -f /etc/init.d/autocore ] && ! grep -q "mlx4" /etc/init.d/autocore 2>/dev/null; then
+	sed -i 's/driver: igc/driver: (igc|igb|mlx4|mlx5|ixgbe)/; s/grep -q "driver:/grep -Eq "driver:/' /etc/init.d/autocore 2>/dev/null || true
+fi
+
+# 14. 确保 ZRAM 交换分区启用并挂载
+if [ -x /etc/init.d/zram ]; then
+	/etc/init.d/zram enable 2>/dev/null || true
+	grep -q zram /proc/swaps 2>/dev/null || /etc/init.d/zram start 2>/dev/null || true
+fi
+
+# 15. R86S (10G SFP+ / 2.5GbE + 8GB RAM) 内核网络栈与 BBR 性能调优
 mkdir -p /etc/sysctl.d
 cat > /etc/sysctl.d/98-twrt-r86s.conf << 'EOF'
 # Twrt R86S 10GbE / 2.5GbE 高吞吐与低延迟内核参数调优

@@ -116,16 +116,16 @@ cmd_apply_live() {
 	local router_ip="${1:-10.0.0.1}"
 	local router_pass="${ROUTER_PASS:-root}"
 	echo "==> 正在将 Twrt 品牌与安全加固配置直接同步到在线路由器 root@${router_ip} ..."
-	SSHPASS="${router_pass}" sshpass -e scp -o PubkeyAuthentication=no -o StrictHostKeyChecking=accept-new \
+	sshpass -p "${router_pass}" scp -o StrictHostKeyChecking=accept-new \
 		"${ROOT_DIR}/devices/common/diy/package/base-files/files/etc/banner" \
 		"root@${router_ip}:/etc/banner"
-	SSHPASS="${router_pass}" sshpass -e scp -o PubkeyAuthentication=no -o StrictHostKeyChecking=accept-new \
+	sshpass -p "${router_pass}" scp -o StrictHostKeyChecking=accept-new \
 		"${ROOT_DIR}/devices/common/diy/package/base-files/files/usr/sbin/twrt-upgrade" \
 		"root@${router_ip}:/usr/sbin/twrt-upgrade"
-	SSHPASS="${router_pass}" sshpass -e scp -o PubkeyAuthentication=no -o StrictHostKeyChecking=accept-new \
+	sshpass -p "${router_pass}" scp -o StrictHostKeyChecking=accept-new \
 		"${ROOT_DIR}/devices/common/diy/package/base-files/files/etc/uci-defaults/99-twrt-security" \
 		"root@${router_ip}:/tmp/99-twrt-security"
-	SSHPASS="${router_pass}" sshpass -e ssh -o PubkeyAuthentication=no -o StrictHostKeyChecking=accept-new "root@${router_ip}" '
+	sshpass -p "${router_pass}" ssh -o StrictHostKeyChecking=accept-new "root@${router_ip}" '
 		chmod +x /usr/sbin/twrt-upgrade
 		sh /tmp/99-twrt-security
 		rm -f /tmp/99-twrt-security
@@ -133,8 +133,8 @@ cmd_apply_live() {
 		sed -i "s/menuentry \"Kwrt/menuentry \"Twrt/g" /boot/grub/grub.cfg 2>/dev/null || true
 		sed -i "/openwrt\.ai/d; /kiddin9\/Kwrt/d; /t\.me\/opkwrt/d" /www/luci-static/resources/view/status/include/10_system.js 2>/dev/null || true
 
-		# 停止并彻底卸载在线路由器上残留的冗余/风险软件包
-		for svc in haproxy fastnet kuli-helper kulicloud linkease-app-entry quickstart startdhns upnpd miniupnpd; do
+		# 停止并彻底卸载在线路由器上残留的冗余/风险软件包与孤立依赖
+		for svc in haproxy fastnet kuli-helper kulicloud linkease-app-entry quickstart startdhns upnpd miniupnpd aria2; do
 			/etc/init.d/$svc stop 2>/dev/null || true
 			/etc/init.d/$svc disable 2>/dev/null || true
 		done
@@ -143,10 +143,17 @@ cmd_apply_live() {
 			linkease-app-entry luci-lib-linkeaseauth \
 			luci-app-kuli-helper luci-app-kulicloud \
 			luci-app-quickstart quickstart luci-app-istorex luci-app-store \
-			haproxy luci-app-gpsysupgrade 2>/dev/null || true
-		rm -rf /etc/config/fastnet /etc/config/kulicloud /etc/config/linkease_app_entry /etc/config/*-opkg /etc/nginx/*-opkg /etc/mihomo /tmp/mihomo 2>/dev/null || true
+			haproxy luci-app-gpsysupgrade aria2-openssl \
+			ruby-bigdecimal ruby-date ruby-digest ruby-enc ruby-io-nonblock ruby-io-wait \
+			ruby-ipaddr ruby-openssl ruby-pstore ruby-psych ruby-socket ruby-stringio ruby-yaml \
+			ruby libruby3.4 2>/dev/null || true
+		rm -rf /etc/config/fastnet /etc/config/kulicloud /etc/config/kuli-helper /etc/config/quickstart /etc/config/istore /etc/config/istorex /etc/config/linkease_app_entry /etc/config/*-opkg /etc/config/*.backup /etc/nginx/*-opkg /etc/mihomo /tmp/mihomo 2>/dev/null || true
+
+		# 修复 /usr/lib/opkg/status 中 luci-app-fan 对不存在的 kmod-hwmon-pwmfan 的报错依赖
+		sed -i "s/, kmod-hwmon-pwmfan//g" /usr/lib/opkg/status 2>/dev/null || true
 
 		/etc/init.d/sysctl restart 2>/dev/null || true
+		/etc/init.d/zram start 2>/dev/null || true
 		/etc/init.d/system reload 2>/dev/null || true
 		/etc/init.d/cron restart 2>/dev/null || true
 		/etc/init.d/dropbear reload 2>/dev/null || true
